@@ -13,18 +13,21 @@ type Parser struct {
 	pos    int
 }
 
-// NewParser creates a new parser for the given expression
-func NewParser(expression string) *Parser {
-	// Tokenize the expression
-	tokens := tokenize(expression)
+// NewParser creates a new parser instance
+func NewParser() *Parser {
 	return &Parser{
-		tokens: tokens,
+		tokens: make([]string, 0),
 		pos:    0,
 	}
 }
 
-// Parse parses the expression and returns an Expr
-func (p *Parser) Parse() (Expr, error) {
+// Parse parses an expression string into an expression tree
+func (p *Parser) Parse(expression string) (Expr, error) {
+	// Tokenize the expression
+	p.tokens = tokenize(expression)
+	p.pos = 0
+
+	// Parse the expression
 	return p.parseExpression()
 }
 

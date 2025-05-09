@@ -1,86 +1,144 @@
 package controllers
 
 import (
-	"fmt"
+	"net/http"
+	"strconv"
 
-	"go-service/errors"
-	"go-service/interfaces"
 	"go-service/services"
-	"go-service/utils"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
-// EvaluateRequest represents the request body for the evaluate endpoint
-// It contains the mathematical expression to be evaluated
+// EvaluateRequest represents the request body for expression evaluation
 type EvaluateRequest struct {
 	Expression string `json:"expression" binding:"required"` // The mathematical expression to evaluate
 }
 
-// EvaluateResponse represents the response body for the evaluate endpoint
-// It includes the evaluation ID and result (if successful) or error (if failed)
+// EvaluateResponse represents the response for expression evaluation
 type EvaluateResponse struct {
-	ID     string  `json:"id"`               // Unique identifier for the evaluation
-	Result float64 `json:"result,omitempty"` // The computed result (if successful)
-	Error  string  `json:"error,omitempty"`  // Error message (if evaluation failed)
+	ID         string  `json:"id"`               // Unique identifier for the evaluation
+	Expression string  `json:"expression"`       // The evaluated expression
+	Result     float64 `json:"result,omitempty"` // The computed result (if successful)
+	Error      string  `json:"error,omitempty"`  // Error message (if evaluation failed)
+	Timestamp  string  `json:"timestamp"`        // When the evaluation was performed
 }
 
-// EvaluateController handles expression evaluation endpoints
+// EvaluateController handles HTTP requests for expression evaluation
 // It provides endpoints for evaluating expressions and retrieving history
 type EvaluateController struct {
-	evalService *services.EvaluationService // Service for expression evaluation
-	logger      interfaces.LoggerService    // Logger for tracking operations
+	evalService *services.EvaluationService // Service for evaluating expressions
+	logger      *zap.Logger                 // Logger for tracking operations
 }
 
 // NewEvaluateController creates a new instance of EvaluateController
-// It initializes the controller with the evaluation service and logger
-func NewEvaluateController(evalService *services.EvaluationService, logger interfaces.LoggerService) *EvaluateController {
+// It initializes the controller with both the evaluation service and logger
+func NewEvaluateController(evalService *services.EvaluationService, logger *zap.Logger) *EvaluateController {
 	return &EvaluateController{
 		evalService: evalService,
 		logger:      logger,
 	}
 }
 
-// Evaluate handles the expression evaluation endpoint
+// Evaluate handles POST requests to evaluate expressions
 // It validates the request, evaluates the expression, and returns the result
-func (e *EvaluateController) Evaluate(c *gin.Context) {
-	e.logger.Info(c, "Received evaluation request")
-
-	// Parse and validate request body
+func (c *EvaluateController) Evaluate(ctx *gin.Context) {
 	var req EvaluateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		e.logger.Error(c, "Invalid request body", err)
-		utils.SendError(c, errors.ErrInvalidRequestBody)
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.logger.Error("Invalid request body",
+			zap.Error(err),
+		)
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
 
-	e.logger.Info(c, fmt.Sprintf("Processing expression: %s", req.Expression))
+	c.logger.Info("Received evaluation request",
+		zap.String("expression", req.Expression),
+	)
 
-	// Evaluate expression using service
-	eval, err := e.evalService.Evaluate(c, req.Expression)
+	eval, err := c.evalService.Evaluate(ctx, req.Expression)
 	if err != nil {
-		e.logger.Error(c, fmt.Sprintf("Evaluation failed for expression: %s", req.Expression), err)
-		utils.SendError(c, errors.NewCustomError(400, "E4007701", "Invalid expression", err.Error(), err))
+		c.logger.Error("Evaluation failed",
+			zap.String("expression", req.Expression),
+			zap.Error(err),
+		)
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Send success response
-	e.logger.Info(c, fmt.Sprintf("Successfully evaluated expression: %s (ID: %s)",
-		req.Expression, eval.ID))
-	utils.SendSuccess(c, "Expression evaluated successfully", EvaluateResponse{
-		ID:     eval.ID,
-		Result: eval.Result,
-	})
+	response := EvaluateResponse{
+		ID:         eval.ID,
+		Expression: eval.Expression,
+		Result:     eval.Result,
+		Timestamp:  eval.Timestamp.Format("2006-01-02T15:04:05Z07:00"),
+	}
+
+	if eval.Error != nil {
+		response.Error = eval.Error.Error()
+	}
+
+	c.logger.Info("Evaluation successful",
+		zap.String("id", eval.ID),
+		zap.Float64("result", eval.Result),
+	)
+
+	ctx.JSON(http.StatusOK, response)
 }
 
-// GetHistory handles the history endpoint
-// It retrieves and returns the evaluation history
-func (e *EvaluateController) GetHistory(c *gin.Context) {
-	e.logger.Info(c, "Received history request")
+// GetHistory handles GET requests to retrieve evaluation history
+// It supports pagination and returns the history in reverse chronological order
+func (c *EvaluateController) GetHistory(ctx *gin.Context) {
+	// Parse pagination parameters
+	page, _ := strconv.Atoi(ctx.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(ctx.DefaultQuery("page_size", "10"))
 
-	// Get history from service
-	history := e.evalService.GetHistory(c)
+	// Validate pagination parameters
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 10
+	}
 
-	e.logger.Info(c, fmt.Sprintf("Retrieved %d evaluations from history", len(history)))
-	utils.SendSuccess(c, "History retrieved successfully", history)
+	c.logger.Info("Received history request",
+		zap.Int("page", page),
+		zap.Int("page_size", pageSize),
+	)
+
+	history, total, err := c.evalService.GetHistory(ctx, page, pageSize)
+	if err != nil {
+		c.logger.Error("Failed to retrieve history",
+			zap.Error(err),
+		)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve history"})
+		return
+	}
+
+	// Convert evaluations to response format
+	response := make([]EvaluateResponse, len(history))
+	for i, eval := range history {
+		response[i] = EvaluateResponse{
+			ID:         eval.ID,
+			Expression: eval.Expression,
+			Result:     eval.Result,
+			Timestamp:  eval.Timestamp.Format("2006-01-02T15:04:05Z07:00"),
+		}
+		if eval.Error != nil {
+			response[i].Error = eval.Error.Error()
+		}
+	}
+
+	c.logger.Info("Retrieved history successfully",
+		zap.Int("count", len(history)),
+		zap.Int("total", total),
+	)
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"data": response,
+		"meta": gin.H{
+			"page":      page,
+			"page_size": pageSize,
+			"total":     total,
+		},
+	})
 }

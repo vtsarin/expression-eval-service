@@ -1,17 +1,25 @@
 package interfaces
 
-import "github.com/gin-gonic/gin"
+import (
+	"context"
 
-// LoggerService defines the interface for logging operations
+	"go.uber.org/zap"
+)
+
+// LoggerService defines the interface for logging
 type LoggerService interface {
-	// Info logs an informational message
-	Info(c *gin.Context, message string)
-	// Error logs an error message
-	Error(c *gin.Context, message string, err error)
-	// Debug logs a debug message
-	Debug(c *gin.Context, message string)
-	// Warn logs a warning message
-	Warn(c *gin.Context, message string)
-	// WithRequestId adds request ID to the logger context
-	WithRequestId(c *gin.Context) LoggerService
+	// WithContext adds context fields to the logger
+	WithContext(ctx context.Context) *zap.Logger
+
+	// Info logs an info message with context
+	Info(ctx context.Context, msg string, fields ...zap.Field)
+
+	// Error logs an error message with context
+	Error(ctx context.Context, msg string, err error, fields ...zap.Field)
+
+	// Warn logs a warning message with context
+	Warn(ctx context.Context, msg string, fields ...zap.Field)
+
+	// Debug logs a debug message with context
+	Debug(ctx context.Context, msg string, fields ...zap.Field)
 }

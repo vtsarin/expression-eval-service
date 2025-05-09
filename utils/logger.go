@@ -1,113 +1,87 @@
 package utils
 
 import (
+	"context"
 	"time"
-
-	"go-service/interfaces"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
+// Logger wraps zap.Logger to provide a consistent logging interface
 type Logger struct {
 	*zap.Logger
 }
 
-// NewLogger creates a new instance of Logger with Zap
-func NewLogger() (interfaces.LoggerService, error) {
-	zapConfig := zap.NewProductionConfig()
-	log, err := zapConfig.Build()
+// NewLogger creates a new logger instance
+func NewLogger() (*Logger, error) {
+	config := zap.NewProductionConfig()
+	logger, err := config.Build()
 	if err != nil {
 		return nil, err
 	}
-
-	return &Logger{log}, nil
+	return &Logger{logger}, nil
 }
 
-// WithRequestId adds request ID to the logger context
-func (l *Logger) WithRequestId(c *gin.Context) interfaces.LoggerService {
-	requestId := c.MustGet("requestId").(string)
-	return &Logger{l.With(zap.String("requestId", requestId))}
-}
-
-// Info logs an informational message with context
-func (l *Logger) Info(c *gin.Context, msg string) {
-	if c == nil {
-		l.Logger.Info(msg)
-		return
+// WithContext adds context fields to the logger
+func (l *Logger) WithContext(ctx context.Context) *zap.Logger {
+	correlationID := GetCorrelationID(ctx)
+	if correlationID == "" {
+		correlationID = uuid.New().String()
+		ctx = WithCorrelationID(ctx, correlationID)
 	}
-	logFields := logFieldsFromContext(c)
-	latency := elapsedSince(c.Value("startTime").(time.Time))
-
-	l.With(zap.Any("context", logFields), zap.Duration("latency", latency)).Info(msg)
+	return l.With(zap.String("correlation_id", correlationID))
 }
 
-// Warn logs a warning message with context
-func (l *Logger) Warn(c *gin.Context, msg string) {
-	if c == nil {
-		l.Logger.Warn(msg)
-		return
-	}
-	logFields := logFieldsFromContext(c)
-	latency := elapsedSince(c.Value("startTime").(time.Time))
-
-	l.With(zap.Any("context", logFields), zap.Duration("latency", latency)).Warn(msg)
+// Info logs an info message with context
+func (l *Logger) Info(msg string, fields ...zap.Field) {
+	l.Logger.Info(msg, fields...)
 }
 
 // Error logs an error message with context
-func (l *Logger) Error(c *gin.Context, msg string, err error) {
-	if c == nil {
-		l.Logger.Error(msg, zap.Error(err))
-		return
-	}
-	logFields := logFieldsFromContext(c)
-	latency := elapsedSince(c.Value("startTime").(time.Time))
+func (l *Logger) Error(msg string, err error, fields ...zap.Field) {
+	fields = append(fields, zap.Error(err))
+	l.Logger.Error(msg, fields...)
+}
 
-	l.With(zap.Any("context", logFields), zap.Duration("latency", latency)).Error(msg, zap.Error(err))
+// Warn logs a warning message with context
+func (l *Logger) Warn(msg string, fields ...zap.Field) {
+	l.Logger.Warn(msg, fields...)
 }
 
 // Debug logs a debug message with context
-func (l *Logger) Debug(c *gin.Context, msg string) {
-	if c == nil {
-		l.Logger.Debug(msg)
-		return
-	}
-	logFields := logFieldsFromContext(c)
-	latency := elapsedSince(c.Value("startTime").(time.Time))
-
-	l.With(zap.Any("context", logFields), zap.Duration("latency", latency)).Debug(msg)
+func (l *Logger) Debug(msg string, fields ...zap.Field) {
+	l.Logger.Debug(msg, fields...)
 }
 
-// logFieldsFromContext extracts relevant fields from the Gin context
-func logFieldsFromContext(c *gin.Context) map[string]interface{} {
-	requestID := c.Request.Header.Get("X-Request-ID")
+// WithRequestID adds request ID to the logger context
+func (l *Logger) WithRequestID(c *gin.Context) *zap.Logger {
+	requestID := c.GetString("request_id")
 	if requestID == "" {
 		requestID = uuid.New().String()
-		c.Request.Header.Set("X-Request-ID", requestID)
+		c.Set("request_id", requestID)
 	}
-
-	startTime := c.GetTime("startTime")
-	if startTime == (time.Time{}) {
-		startTime = time.Now()
-		c.Set("startTime", startTime)
-	}
-
-	return map[string]interface{}{
-		"requestId":     requestID,
-		"correlationId": c.GetString("correlationId"),
-		"path":          c.Request.URL.Path,
-		"controller":    c.HandlerName(),
-	}
+	return l.With(zap.String("request_id", requestID))
 }
 
-// GenerateRequestID generates and sets a new request ID in the context
-func GenerateRequestID(c *gin.Context) {
-	c.Set("requestId", uuid.New().String())
-	c.Set("startTime", time.Now())
-}
+// WithGinContext adds Gin context fields to the logger
+func (l *Logger) WithGinContext(c *gin.Context) *zap.Logger {
+	if c == nil {
+		return l.Logger
+	}
 
-// elapsedSince calculates the time elapsed since the given start time
-func elapsedSince(startTime time.Time) time.Duration {
-	return time.Since(startTime)
+	fields := []zap.Field{
+		zap.String("path", c.Request.URL.Path),
+		zap.String("method", c.Request.Method),
+		zap.String("client_ip", c.ClientIP()),
+	}
+
+	if startTime, exists := c.Get("start_time"); exists {
+		if t, ok := startTime.(time.Time); ok {
+			fields = append(fields, zap.Duration("latency", time.Since(t)))
+		}
+	}
+
+	return l.With(fields...)
 }

@@ -1,15 +1,14 @@
 package services
 
 import (
-	"fmt"
+	"context"
 	"sync"
 	"time"
 
 	"go-service/evaluator"
-	"go-service/interfaces"
 
-	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 // Evaluation represents a single expression evaluation with its metadata
@@ -17,92 +16,121 @@ type Evaluation struct {
 	ID         string    `json:"id"`               // Unique identifier for the evaluation
 	Expression string    `json:"expression"`       // The mathematical expression to evaluate
 	Result     float64   `json:"result,omitempty"` // The computed result (if successful)
-	Error      string    `json:"error,omitempty"`  // Error message (if evaluation failed)
+	Error      error     `json:"error,omitempty"`  // Error message (if evaluation failed)
 	Timestamp  time.Time `json:"timestamp"`        // When the evaluation was performed
 }
 
 // EvaluationService manages expression evaluations and their history
 // It provides thread-safe operations for evaluating expressions and retrieving history
 type EvaluationService struct {
-	history []Evaluation             // In-memory storage for evaluation history
-	mu      sync.RWMutex             // Mutex for thread-safe access to history
-	logger  interfaces.LoggerService // Logger for tracking operations
+	history []Evaluation      // In-memory storage for evaluation history
+	mu      sync.RWMutex      // Mutex for thread-safe access to history
+	logger  *zap.Logger       // Logger for tracking operations
+	parser  *evaluator.Parser // Parser for parsing expressions
 }
 
 // NewEvaluationService creates a new instance of EvaluationService
 // It initializes an empty history and sets up the logger
-func NewEvaluationService(logger interfaces.LoggerService) *EvaluationService {
+func NewEvaluationService(logger *zap.Logger) *EvaluationService {
 	return &EvaluationService{
 		history: make([]Evaluation, 0),
 		logger:  logger,
+		parser:  evaluator.NewParser(),
 	}
 }
 
 // Evaluate evaluates an expression and stores the result in history
 // It handles both successful evaluations and errors, storing both in history
-func (s *EvaluationService) Evaluate(c *gin.Context, expression string) (Evaluation, error) {
-	// Generate a new evaluation with unique ID and timestamp
+func (s *EvaluationService) Evaluate(ctx context.Context, expression string) (Evaluation, error) {
+	s.logger.Info("Starting evaluation of expression",
+		zap.String("expression", expression),
+	)
+
+	// Create evaluation record
 	eval := Evaluation{
 		ID:         uuid.New().String(),
 		Expression: expression,
 		Timestamp:  time.Now(),
 	}
 
-	s.logger.Info(c, fmt.Sprintf("Starting evaluation of expression: %s (ID: %s)", expression, eval.ID))
-
-	// Parse the expression
-	parser := evaluator.NewParser(expression)
-	expr, err := parser.Parse()
+	// Parse and evaluate expression
+	expr, err := s.parser.Parse(expression)
 	if err != nil {
-		s.logger.Error(c, fmt.Sprintf("Failed to parse expression: %s (ID: %s)", expression, eval.ID), err)
-		eval.Error = err.Error()
-		s.addToHistory(c, eval)
+		eval.Error = err
+		s.addToHistory(ctx, eval)
+		s.logger.Error("Failed to parse expression",
+			zap.String("expression", expression),
+			zap.Error(err),
+		)
 		return eval, err
 	}
 
-	// Evaluate the parsed expression
+	// Evaluate the expression
 	result, err := expr.Evaluate()
 	if err != nil {
-		s.logger.Error(c, fmt.Sprintf("Failed to evaluate expression: %s (ID: %s)", expression, eval.ID), err)
-		eval.Error = err.Error()
-		s.addToHistory(c, eval)
+		eval.Error = err
+		s.addToHistory(ctx, eval)
+		s.logger.Error("Failed to evaluate expression",
+			zap.String("expression", expression),
+			zap.Error(err),
+		)
 		return eval, err
 	}
 
-	// Store successful evaluation
 	eval.Result = result
-	s.logger.Info(c, fmt.Sprintf("Successfully evaluated expression: %s = %f (ID: %s)",
-		expression, result, eval.ID))
-	s.addToHistory(c, eval)
+	s.addToHistory(ctx, eval)
+
+	s.logger.Info("Successfully evaluated expression",
+		zap.String("expression", expression),
+		zap.Float64("result", result),
+		zap.String("id", eval.ID),
+	)
+
 	return eval, nil
 }
 
-// GetHistory returns all evaluations, most recent first
-// It creates a copy of the history to avoid race conditions
-func (s *EvaluationService) GetHistory(c *gin.Context) []Evaluation {
+// GetHistory retrieves the evaluation history with pagination
+func (s *EvaluationService) GetHistory(ctx context.Context, page, pageSize int) ([]Evaluation, int, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	s.logger.Info(c, fmt.Sprintf("Retrieving evaluation history (count: %d)", len(s.history)))
+	// Calculate pagination
+	total := len(s.history)
+	start := (page - 1) * pageSize
+	end := start + pageSize
 
-	// Create a copy of the history to avoid race conditions
-	history := make([]Evaluation, len(s.history))
-	copy(history, s.history)
-
-	// Reverse the slice to get most recent first
-	for i, j := 0, len(history)-1; i < j; i, j = i+1, j-1 {
-		history[i], history[j] = history[j], history[i]
+	// Adjust end index if it exceeds the slice length
+	if end > total {
+		end = total
 	}
 
-	return history
+	// Return empty slice if start index is out of bounds
+	if start >= total {
+		return []Evaluation{}, total, nil
+	}
+
+	// Get paginated slice
+	history := make([]Evaluation, end-start)
+	copy(history, s.history[start:end])
+
+	s.logger.Info("Retrieved paginated history",
+		zap.Int("page", page),
+		zap.Int("page_size", pageSize),
+		zap.Int("total", total),
+	)
+
+	return history, total, nil
 }
 
 // addToHistory adds an evaluation to the history
 // It uses a mutex to ensure thread-safe access
-func (s *EvaluationService) addToHistory(c *gin.Context, eval Evaluation) {
+func (s *EvaluationService) addToHistory(ctx context.Context, eval Evaluation) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	s.history = append(s.history, eval)
-	s.logger.Info(c, fmt.Sprintf("Added evaluation to history (ID: %s, Total: %d)",
-		eval.ID, len(s.history)))
+	s.logger.Info("Added evaluation to history",
+		zap.String("id", eval.ID),
+		zap.Int("total", len(s.history)),
+	)
 }
