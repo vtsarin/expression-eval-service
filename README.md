@@ -8,13 +8,21 @@ A robust Go service built with Gin framework that provides expression evaluation
   - Basic arithmetic operations (+, -, *, /)
   - Parentheses for grouping
   - Floating-point numbers
-- Evaluation history tracking
+- Evaluation history tracking with pagination
 - Thread-safe operations
 - Structured logging with Zap
 - Request correlation ID tracking
 - Request latency monitoring
 - Health check endpoint
 - Docker support
+- Rate limiting
+- CORS support
+- Request ID tracking
+- Configuration management
+- Connection pooling
+- Request timeouts
+- Input validation
+- Response formatting
 
 ## Prerequisites
 
@@ -25,18 +33,19 @@ A robust Go service built with Gin framework that provides expression evaluation
 
 ```
 .
-├── controllers/         # HTTP request handlers
-├── errors/             # Custom error definitions
-├── evaluator/          # Expression parsing and evaluation
-├── interfaces/         # Interface definitions
-├── middlewares/        # HTTP middleware components
-├── services/           # Business logic
-├── utils/              # Utility functions
-├── Dockerfile         # Multi-stage Docker build
-├── go.mod             # Go module definition
-├── go.sum             # Go module checksums
-├── main.go            # Application entry point
-└── README.md          # This file
+├── config/             # Configuration management
+├── controllers/        # HTTP request handlers
+├── errors/            # Custom error definitions
+├── evaluator/         # Expression parsing and evaluation
+├── interfaces/        # Interface definitions
+├── middlewares/       # HTTP middleware components
+├── services/          # Business logic
+├── utils/             # Utility functions
+├── Dockerfile        # Multi-stage Docker build
+├── go.mod            # Go module definition
+├── go.sum            # Go module checksums
+├── main.go           # Application entry point
+└── README.md         # This file
 ```
 
 ## Setup and Installation
@@ -89,39 +98,33 @@ Evaluates a mathematical expression and stores the result in history.
 **Success Response (200 OK):**
 ```json
 {
-    "status": "success",
-    "message": "Expression evaluated successfully",
-    "data": {
-        "id": "550e8400-e29b-41d4-a716-446655440000",
-        "result": 11
-    }
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "expression": "3 + (2 * 4)",
+    "result": 11,
+    "timestamp": "2024-03-14T12:00:00Z"
 }
 ```
 
 **Error Response (400 Bad Request):**
 ```json
 {
-    "status": "error",
-    "message": "Invalid expression",
-    "error": {
-        "code": "E4007701",
-        "message": "Invalid expression",
-        "details": "unexpected token: )"
-    }
+    "error": "Invalid expression: unexpected token: )"
 }
 ```
 
 ### 2. Get Evaluation History
 
-Retrieves the history of all expression evaluations.
+Retrieves the history of expression evaluations with pagination.
 
 **Endpoint:** `GET /api/history`
+
+**Query Parameters:**
+- `page` (optional): Page number (default: 1)
+- `page_size` (optional): Items per page (default: 10, max: 100)
 
 **Success Response (200 OK):**
 ```json
 {
-    "status": "success",
-    "message": "History retrieved successfully",
     "data": [
         {
             "id": "550e8400-e29b-41d4-a716-446655440000",
@@ -129,7 +132,12 @@ Retrieves the history of all expression evaluations.
             "result": 11,
             "timestamp": "2024-03-14T12:00:00Z"
         }
-    ]
+    ],
+    "meta": {
+        "page": 1,
+        "page_size": 10,
+        "total": 1
+    }
 }
 ```
 
@@ -142,12 +150,8 @@ Checks the health status of the service.
 **Success Response (200 OK):**
 ```json
 {
-    "status": "success",
-    "message": "Service is healthy",
-    "data": {
-        "status": "UP",
-        "timestamp": "2024-03-14T12:00:00Z"
-    }
+    "status": "UP",
+    "timestamp": "2024-03-14T12:00:00Z"
 }
 ```
 
@@ -161,8 +165,8 @@ curl -X POST http://localhost:8080/api/evaluate \
   -H "Content-Type: application/json" \
   -d '{"expression": "3 + (2 * 4)"}'
 
-# Get evaluation history
-curl http://localhost:8080/api/history
+# Get evaluation history with pagination
+curl "http://localhost:8080/api/history?page=1&page_size=10"
 
 # Check service health
 curl http://localhost:8080/api/health
@@ -176,6 +180,9 @@ The service uses structured logging with Zap. Logs include:
 - Operation timing
 - Error details
 - Evaluation history tracking
+- Request path and method
+- Client IP address
+- Request ID tracking
 
 ## Error Handling
 
@@ -184,6 +191,26 @@ The service implements a custom error handling system with:
 - Error codes for different scenarios
 - Detailed error messages
 - Error tracking in evaluation history
+- Input validation errors
+- Rate limit exceeded errors
+- CORS errors
+
+## Security Features
+
+- Rate limiting to prevent abuse
+- CORS protection
+- Request size limits
+- Input validation
+- Secure headers
+- Request timeouts
+
+## Performance Features
+
+- Connection pooling
+- Request timeouts
+- Efficient logging
+- Pagination for large datasets
+- Thread-safe operations
 
 ## Contributing
 
