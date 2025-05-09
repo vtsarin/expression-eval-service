@@ -4,9 +4,12 @@ import (
 	"context"
 )
 
+// contextKey is a custom type for context keys to avoid collisions
+type contextKey string
+
 const (
 	// CorrelationIDKey is the key used to store correlation ID in context
-	CorrelationIDKey = "correlation_id"
+	CorrelationIDKey contextKey = "correlation_id"
 )
 
 // GetCorrelationID gets the correlation ID from context
