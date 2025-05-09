@@ -1,0 +1,60 @@
+# Compiled Object files, Static and Dynamic libs (Shared Objects)
+*.o
+*.a
+*.so
+docker-compose.yml
+credentials/
+*.json
+
+# Folders
+_obj
+_test
+
+# Architecture specific extensions/prefixes
+*.[568vq]
+[568vq].out
+
+*.cgo1.go
+*.cgo2.c
+_cgo_defun.c
+_cgo_gotypes.go
+_cgo_export.*
+
+_testmain.go
+
+*.exe
+*.test
+*.prof
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Dependency directories (go mod cache)
+pkg/
+vendor/
+
+# IDEs
+.idea/
+*.iml
+
+# Environment files
+.env
+.env.*
+*.env
+
+# Golang build files
+beacon-service-v2
+*.bin
+
+# Miscellaneous
+*.log
+.DS_Store
+*.swp
+*~
+
+# Docker
+*.tar
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
