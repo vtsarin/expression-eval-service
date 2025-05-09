@@ -1,4 +1,4 @@
-module go-service
+module expression-eval-service
 
 go 1.22.2
 

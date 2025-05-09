@@ -5,9 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"go-service/evaluator"
+	"expression-eval-service/evaluator"
+	"expression-eval-service/models"
 
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -23,17 +23,17 @@ type Evaluation struct {
 // EvaluationService manages expression evaluations and their history
 // It provides thread-safe operations for evaluating expressions and retrieving history
 type EvaluationService struct {
-	history []Evaluation      // In-memory storage for evaluation history
-	mu      sync.RWMutex      // Mutex for thread-safe access to history
-	logger  *zap.Logger       // Logger for tracking operations
-	parser  *evaluator.Parser // Parser for parsing expressions
+	history []models.Evaluation // In-memory storage for evaluation history
+	mu      sync.RWMutex        // Mutex for thread-safe access to history
+	logger  *zap.Logger         // Logger for tracking operations
+	parser  *evaluator.Parser   // Parser for parsing expressions
 }
 
 // NewEvaluationService creates a new instance of EvaluationService
 // It initializes an empty history and sets up the logger
 func NewEvaluationService(logger *zap.Logger) *EvaluationService {
 	return &EvaluationService{
-		history: make([]Evaluation, 0),
+		history: make([]models.Evaluation, 0),
 		logger:  logger,
 		parser:  evaluator.NewParser(),
 	}
@@ -41,22 +41,18 @@ func NewEvaluationService(logger *zap.Logger) *EvaluationService {
 
 // Evaluate evaluates an expression and stores the result in history
 // It handles both successful evaluations and errors, storing both in history
-func (s *EvaluationService) Evaluate(ctx context.Context, expression string) (Evaluation, error) {
+func (s *EvaluationService) Evaluate(ctx context.Context, expression string) (models.Evaluation, error) {
 	s.logger.Info("Starting evaluation of expression",
 		zap.String("expression", expression),
 	)
 
 	// Create evaluation record
-	eval := Evaluation{
-		ID:         uuid.New().String(),
-		Expression: expression,
-		Timestamp:  time.Now(),
-	}
+	eval := models.NewEvaluation(expression)
 
 	// Parse and evaluate expression
 	expr, err := s.parser.Parse(expression)
 	if err != nil {
-		eval.Error = err
+		eval.Error = err.Error()
 		s.addToHistory(ctx, eval)
 		s.logger.Error("Failed to parse expression",
 			zap.String("expression", expression),
@@ -68,7 +64,7 @@ func (s *EvaluationService) Evaluate(ctx context.Context, expression string) (Ev
 	// Evaluate the expression
 	result, err := expr.Evaluate()
 	if err != nil {
-		eval.Error = err
+		eval.Error = err.Error()
 		s.addToHistory(ctx, eval)
 		s.logger.Error("Failed to evaluate expression",
 			zap.String("expression", expression),
@@ -89,8 +85,64 @@ func (s *EvaluationService) Evaluate(ctx context.Context, expression string) (Ev
 	return eval, nil
 }
 
+// EvaluateBatch evaluates multiple expressions concurrently
+func (s *EvaluationService) EvaluateBatch(ctx context.Context, expressions []string) models.BatchEvaluationResponse {
+	s.logger.Info("Starting batch evaluation",
+		zap.Int("expression_count", len(expressions)))
+
+	results := make([]models.Evaluation, 0, len(expressions))
+	var wg sync.WaitGroup
+	resultChan := make(chan models.Evaluation, len(expressions))
+
+	// Launch a goroutine for each expression
+	for i, expr := range expressions {
+		wg.Add(1)
+		go func(index int, expression string) {
+			defer wg.Done()
+
+			eval := models.NewEvaluation(expression)
+			ast, err := s.parser.Parse(expression)
+			if err != nil {
+				eval.Error = err.Error()
+				resultChan <- eval
+				return
+			}
+
+			result, err := ast.Evaluate()
+			if err != nil {
+				eval.Error = err.Error()
+			} else {
+				eval.Result = result
+			}
+			resultChan <- eval
+		}(i, expr)
+	}
+
+	// Wait for all evaluations to complete
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	// Collect results
+	for result := range resultChan {
+		results = append(results, result)
+		// Store in history
+		s.mu.Lock()
+		s.history = append(s.history, result)
+		s.mu.Unlock()
+	}
+
+	s.logger.Info("Completed batch evaluation",
+		zap.Int("result_count", len(results)))
+
+	return models.BatchEvaluationResponse{
+		Results: results,
+	}
+}
+
 // GetHistory retrieves the evaluation history with pagination
-func (s *EvaluationService) GetHistory(ctx context.Context, page, pageSize int) ([]Evaluation, int, error) {
+func (s *EvaluationService) GetHistory(ctx context.Context, page, pageSize int) ([]models.Evaluation, int, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -106,11 +158,11 @@ func (s *EvaluationService) GetHistory(ctx context.Context, page, pageSize int) 
 
 	// Return empty slice if start index is out of bounds
 	if start >= total {
-		return []Evaluation{}, total, nil
+		return []models.Evaluation{}, total, nil
 	}
 
 	// Get paginated slice
-	history := make([]Evaluation, end-start)
+	history := make([]models.Evaluation, end-start)
 	copy(history, s.history[start:end])
 
 	s.logger.Info("Retrieved paginated history",
@@ -124,7 +176,7 @@ func (s *EvaluationService) GetHistory(ctx context.Context, page, pageSize int) 
 
 // addToHistory adds an evaluation to the history
 // It uses a mutex to ensure thread-safe access
-func (s *EvaluationService) addToHistory(ctx context.Context, eval Evaluation) {
+func (s *EvaluationService) addToHistory(ctx context.Context, eval models.Evaluation) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

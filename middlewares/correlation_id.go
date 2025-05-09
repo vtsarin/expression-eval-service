@@ -1,7 +1,7 @@
 package middlewares
 
 import (
-	"go-service/constants"
+	"expression-eval-service/constants"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"

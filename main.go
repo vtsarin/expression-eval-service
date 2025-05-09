@@ -9,11 +9,13 @@ import (
 	"syscall"
 	"time"
 
-	"go-service/config"
-	"go-service/controllers"
-	"go-service/middlewares"
-	"go-service/services"
-	"go-service/utils"
+	"expression-eval-service/config"
+	"expression-eval-service/controllers"
+	"expression-eval-service/errors"
+	"expression-eval-service/middlewares"
+	"expression-eval-service/routes"
+	"expression-eval-service/services"
+	"expression-eval-service/utils"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -31,6 +33,9 @@ func main() {
 	}
 	defer logger.Sync()
 
+	// Initialize error metrics
+	errors.InitializeErrorMetrics(logger.Logger)
+
 	// Initialize services
 	evalService := services.NewEvaluationService(logger.Logger)
 
@@ -41,24 +46,14 @@ func main() {
 	router := gin.New()
 
 	// Add middleware
-	router.Use(gin.Recovery())
+	router.Use(middlewares.RecoveryMiddleware(logger.Logger))
 	router.Use(middlewares.RequestIDMiddleware())
 	router.Use(middlewares.LoggerMiddleware(logger.Logger))
 	router.Use(middlewares.RateLimitMiddleware(float64(cfg.Security.RateLimit), float64(cfg.Security.RateLimit), logger.Logger))
 	router.Use(middlewares.CORSMiddleware(cfg.Security.AllowedOrigins))
 
-	// Configure API routes
-	api := router.Group("/api")
-	{
-		// Health check endpoint
-		api.GET("/health", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{"status": "ok"})
-		})
-
-		// Evaluation endpoints
-		api.POST("/evaluate", evaluateController.Evaluate)
-		api.GET("/history", evaluateController.GetHistory)
-	}
+	// Setup routes
+	routes.SetupRoutes(router, evaluateController)
 
 	// Configure HTTP server
 	srv := &http.Server{

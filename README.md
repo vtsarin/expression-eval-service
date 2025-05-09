@@ -1,221 +1,121 @@
-# Go Expression Evaluation Service
+# Expression Evaluation Service
 
-A robust Go service built with Gin framework that provides expression evaluation capabilities with history tracking. The service features structured logging, error handling, and middleware for request tracking.
+A Go service that evaluates mathematical expressions with support for batch processing.
 
 ## Features
 
-- Expression evaluation with support for:
-  - Basic arithmetic operations (+, -, *, /)
-  - Parentheses for grouping
-  - Floating-point numbers
-- Evaluation history tracking with pagination
-- Thread-safe operations
-- Structured logging with Zap
-- Request correlation ID tracking
-- Request latency monitoring
-- Health check endpoint
-- Docker support
+- Single expression evaluation
+- Batch expression evaluation
+- Expression history with pagination
+- Concurrent processing
+- Error handling and logging
 - Rate limiting
 - CORS support
-- Request ID tracking
-- Configuration management
-- Connection pooling
-- Request timeouts
-- Input validation
-- Response formatting
+- Health check endpoint
 
 ## Prerequisites
 
-- Go 1.21 or higher
-- Docker (optional, for containerized deployment)
+- Go 1.21 or later
+- Docker (optional)
 
-## Project Structure
-
-```
-.
-├── config/             # Configuration management
-├── controllers/        # HTTP request handlers
-├── errors/            # Custom error definitions
-├── evaluator/         # Expression parsing and evaluation
-├── interfaces/        # Interface definitions
-├── middlewares/       # HTTP middleware components
-├── services/          # Business logic
-├── utils/             # Utility functions
-├── Dockerfile        # Multi-stage Docker build
-├── go.mod            # Go module definition
-├── go.sum            # Go module checksums
-├── main.go           # Application entry point
-└── README.md         # This file
-```
-
-## Setup and Installation
+## Installation
 
 1. Clone the repository:
-   ```bash
-   git clone <repository-url>
-   cd go-service
-   ```
+```bash
+git clone https://github.com/yourusername/expression-eval-service.git
+cd expression-eval-service
+```
 
 2. Install dependencies:
-   ```bash
-   go mod download
-   ```
+```bash
+go mod download
+```
 
-3. Run the service:
-   ```bash
-   go run main.go
-   ```
+## Running the Service
+
+### Local Development
+
+```bash
+go run main.go
+```
 
 The service will start on port 8080.
 
-## Docker Deployment
+### Using Docker
 
-Build and run using Docker:
+Build the Docker image:
+```bash
+docker build -t expression-eval-service .
+```
+
+Run the container:
+```bash
+docker run -p 8080:8080 expression-eval-service
+```
+
+## API Endpoints
+
+### Single Expression Evaluation
 
 ```bash
-# Build the image
-docker build -t go-service .
-
-# Run the container
-docker run -p 8080:8080 go-service
-```
-
-## API Documentation
-
-### 1. Evaluate Expression
-
-Evaluates a mathematical expression and stores the result in history.
-
-**Endpoint:** `POST /api/evaluate`
-
-**Request Body:**
-```json
-{
-    "expression": "3 + (2 * 4)"
-}
-```
-
-**Success Response (200 OK):**
-```json
-{
-    "id": "550e8400-e29b-41d4-a716-446655440000",
-    "expression": "3 + (2 * 4)",
-    "result": 11,
-    "timestamp": "2024-03-14T12:00:00Z"
-}
-```
-
-**Error Response (400 Bad Request):**
-```json
-{
-    "error": "Invalid expression: unexpected token: )"
-}
-```
-
-### 2. Get Evaluation History
-
-Retrieves the history of expression evaluations with pagination.
-
-**Endpoint:** `GET /api/history`
-
-**Query Parameters:**
-- `page` (optional): Page number (default: 1)
-- `page_size` (optional): Items per page (default: 10, max: 100)
-
-**Success Response (200 OK):**
-```json
-{
-    "data": [
-        {
-            "id": "550e8400-e29b-41d4-a716-446655440000",
-            "expression": "3 + (2 * 4)",
-            "result": 11,
-            "timestamp": "2024-03-14T12:00:00Z"
-        }
-    ],
-    "meta": {
-        "page": 1,
-        "page_size": 10,
-        "total": 1
-    }
-}
-```
-
-### 3. Health Check
-
-Checks the health status of the service.
-
-**Endpoint:** `GET /api/health`
-
-**Success Response (200 OK):**
-```json
-{
-    "status": "UP",
-    "timestamp": "2024-03-14T12:00:00Z"
-}
-```
-
-## Testing the API
-
-Using curl:
-
-```bash
-# Evaluate an expression
-curl -X POST http://localhost:8080/api/evaluate \
+curl -X POST http://localhost:8080/api/evaluate/single \
   -H "Content-Type: application/json" \
-  -d '{"expression": "3 + (2 * 4)"}'
-
-# Get evaluation history with pagination
-curl "http://localhost:8080/api/history?page=1&page_size=10"
-
-# Check service health
-curl http://localhost:8080/api/health
+  -d '{
+    "expression": "3 + 4"
+  }'
 ```
 
-## Logging
+### Batch Expression Evaluation
 
-The service uses structured logging with Zap. Logs include:
-- Request correlation IDs
-- Request latency
-- Operation timing
-- Error details
-- Evaluation history tracking
-- Request path and method
-- Client IP address
-- Request ID tracking
+```bash
+curl -X POST http://localhost:8080/api/evaluate/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "expressions": [
+      "3 + 4",
+      "10 / 2",
+      "(2 + 3) * 5",
+      "3 / 0",
+      "4 + * 2"
+    ]
+  }'
+```
+
+### Get History
+
+```bash
+curl "http://localhost:8080/api/evaluate/history?page=1&pageSize=10"
+```
+
+## Configuration
+
+The service can be configured using environment variables:
+
+- `PORT`: Server port (default: 8080)
+- `RATE_LIMIT`: Requests per second (default: 100)
+- `ALLOWED_ORIGINS`: Comma-separated list of allowed CORS origins (default: "*")
 
 ## Error Handling
 
-The service implements a custom error handling system with:
-- Structured error responses
-- Error codes for different scenarios
-- Detailed error messages
-- Error tracking in evaluation history
-- Input validation errors
-- Rate limit exceeded errors
-- CORS errors
+The service provides detailed error messages for:
+- Invalid expressions
+- Division by zero
+- Syntax errors
+- Rate limit exceeded
+- Invalid requests
 
-## Security Features
+## Logging
 
-- Rate limiting to prevent abuse
-- CORS protection
-- Request size limits
-- Input validation
-- Secure headers
-- Request timeouts
-
-## Performance Features
-
-- Connection pooling
-- Request timeouts
-- Efficient logging
-- Pagination for large datasets
-- Thread-safe operations
+The service uses structured logging with Zap, including:
+- Request/response logging
+- Error logging
+- Performance metrics
+- Correlation IDs
 
 ## Contributing
 
 1. Fork the repository
-2. Create a feature branch
+2. Create your feature branch
 3. Commit your changes
 4. Push to the branch
 5. Create a Pull Request

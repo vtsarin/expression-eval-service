@@ -2,8 +2,9 @@ package middlewares
 
 import (
 	"fmt"
-	"go-service/interfaces"
 	"time"
+
+	"expression-eval-service/interfaces"
 
 	"github.com/gin-gonic/gin"
 )
