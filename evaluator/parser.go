@@ -22,7 +22,7 @@ func NewParser() *Parser {
 }
 
 // Parse parses an expression string into an expression tree
-func (p *Parser) Parse(expression string) (Expr, error) {
+func (p *Parser) Parse(expression string) (ExprNode, error) {
 	// Tokenize the expression
 	p.tokens = tokenize(expression)
 	p.pos = 0
@@ -32,7 +32,7 @@ func (p *Parser) Parse(expression string) (Expr, error) {
 }
 
 // parseExpression parses an expression: term (('+' | '-') term)*
-func (p *Parser) parseExpression() (Expr, error) {
+func (p *Parser) parseExpression() (ExprNode, error) {
 	expr, err := p.parseTerm()
 	if err != nil {
 		return nil, err
@@ -50,7 +50,7 @@ func (p *Parser) parseExpression() (Expr, error) {
 			return nil, err
 		}
 
-		expr = &BinaryExpr{
+		expr = &BinaryOpNode{
 			Left:     expr,
 			Operator: op,
 			Right:    right,
@@ -61,7 +61,7 @@ func (p *Parser) parseExpression() (Expr, error) {
 }
 
 // parseTerm parses a term: factor (('*' | '/') factor)*
-func (p *Parser) parseTerm() (Expr, error) {
+func (p *Parser) parseTerm() (ExprNode, error) {
 	expr, err := p.parseFactor()
 	if err != nil {
 		return nil, err
@@ -79,7 +79,7 @@ func (p *Parser) parseTerm() (Expr, error) {
 			return nil, err
 		}
 
-		expr = &BinaryExpr{
+		expr = &BinaryOpNode{
 			Left:     expr,
 			Operator: op,
 			Right:    right,
@@ -90,7 +90,7 @@ func (p *Parser) parseTerm() (Expr, error) {
 }
 
 // parseFactor parses a factor: number | '(' expression ')'
-func (p *Parser) parseFactor() (Expr, error) {
+func (p *Parser) parseFactor() (ExprNode, error) {
 	if p.pos >= len(p.tokens) {
 		return nil, fmt.Errorf("unexpected end of expression")
 	}
@@ -118,7 +118,7 @@ func (p *Parser) parseFactor() (Expr, error) {
 		return nil, fmt.Errorf("invalid number: %s", token)
 	}
 
-	return &LiteralExpr{Value: value}, nil
+	return &ValueNode{Value: value}, nil
 }
 
 // tokenize splits the expression into tokens

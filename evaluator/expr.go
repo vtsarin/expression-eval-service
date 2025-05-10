@@ -5,24 +5,24 @@ import (
 )
 
 // Expr represents an expression that can be evaluated
-type Expr interface {
+type ExprNode interface {
 	Evaluate() (float64, error)
 }
 
 // BinaryExpr represents a binary operation (e.g., 1 + 2)
-type BinaryExpr struct {
-	Left     Expr
+type BinaryOpNode struct {
+	Left     ExprNode
 	Operator string
-	Right    Expr
+	Right    ExprNode
 }
 
 // LiteralExpr represents a number literal
-type LiteralExpr struct {
+type ValueNode struct {
 	Value float64
 }
 
 // Evaluate implements the Expr interface for BinaryExpr
-func (b *BinaryExpr) Evaluate() (float64, error) {
+func (b *BinaryOpNode) Evaluate() (float64, error) {
 	left, err := b.Left.Evaluate()
 	if err != nil {
 		return 0, err
@@ -51,6 +51,6 @@ func (b *BinaryExpr) Evaluate() (float64, error) {
 }
 
 // Evaluate implements the Expr interface for LiteralExpr
-func (l *LiteralExpr) Evaluate() (float64, error) {
+func (l *ValueNode) Evaluate() (float64, error) {
 	return l.Value, nil
 }
